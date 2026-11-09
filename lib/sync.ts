@@ -27,11 +27,20 @@ function state(): SyncState {
   return globalSync.endpointSyncState;
 }
 
+const HOSTED_SNAPSHOT_MESSAGE =
+  "线上部署使用随仓库提交的目录快照，不会在一次函数调用里抓取完整目录。";
+
+/** Vercel invocations cannot finish a full NGC page scrape before the platform stops them. */
+export function usesHostedSnapshot(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VERCEL === "1";
+}
+
 export function syncStatus(): {
   state: "idle" | "running";
   progress: string;
   lastSuccessAt: string | null;
   lastRun: SyncRunView | null;
+  message?: string;
 } {
   const database = getDb();
   return {
@@ -39,10 +48,12 @@ export function syncStatus(): {
     progress: state().progress,
     lastSuccessAt: lastSuccessAt(database),
     lastRun: latestSync(database),
+    message: usesHostedSnapshot() ? HOSTED_SNAPSHOT_MESSAGE : undefined,
   };
 }
 
-export function triggerSync(): { started: boolean } {
+export function triggerSync(): { started: boolean; message?: string } {
+  if (usesHostedSnapshot()) return { started: false, message: HOSTED_SNAPSHOT_MESSAGE };
   if (globalSync.endpointSync) return { started: false };
   const current = runSync().finally(() => {
     globalSync.endpointSync = null;
@@ -92,6 +103,7 @@ async function runSync(): Promise<void> {
 }
 
 export function ensureScheduledSync(intervalHours: number): void {
+  if (usesHostedSnapshot()) return;
   const database = getDb();
   const latest = lastSuccessAt(database);
   if (!latest) {

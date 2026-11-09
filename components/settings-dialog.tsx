@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { KEY_TEST_CLIENT_ABORT_MS } from "@/lib/limits";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,12 +65,24 @@ export function SettingsDialog({
           "content-type": "application/json",
           "x-nvidia-api-key": apiKey,
         },
-        body: JSON.stringify({ modelId: testModelId }),
+        body: JSON.stringify(testModelId ? { modelId: testModelId } : {}),
+        signal: AbortSignal.timeout(KEY_TEST_CLIENT_ABORT_MS),
       });
-      const data = (await response.json()) as { message?: string };
-      setNotice(data.message ?? (response.ok ? "连接可用。" : "测试没有完成。"));
-    } catch {
-      setNotice("网络失败。输入还在，可以再测一次。");
+      const data = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!data?.message) {
+        setNotice(
+          response.status === 504
+            ? "测试超时，服务器没有返回结果。这不能说明 Key 无效。"
+            : response.ok
+              ? "连接可用。"
+              : "测试没有完成。",
+        );
+        return;
+      }
+      setNotice(data.message);
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+      setNotice(timedOut ? "测试超时。这不能说明 Key 无效，可以再测一次。" : "网络失败。输入还在，可以再测一次。");
     } finally {
       setTesting(false);
     }
@@ -134,7 +147,7 @@ export function SettingsDialog({
             默认只留在本次标签页。勾选后保存在这台浏览器的本地存储，仍然不会上传到目录数据库。
           </p>
           <p className="text-xs leading-5 text-muted-foreground">
-            测试会向当前选中的聊天模型发送短请求，繁忙时最多等待 90 秒；如果未选择聊天模型，将使用目录中的第一个可聊天模型。
+            选中可聊天模型时，测试发往该模型。未选择时，改用目录里较小的可聊天模型。最长约 50 秒；超时会返回明确错误，不能说明 Key 无效。
           </p>
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>保存聊天记录</span>
