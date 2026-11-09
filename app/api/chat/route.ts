@@ -1,9 +1,10 @@
 import { clampNumber, readApiKey, sanitizeMessages } from "@/lib/chat";
-import { classifyUpstream } from "@/lib/errors";
+import { classifyNetworkError, classifyUpstream } from "@/lib/errors";
 import { getDb, getModel } from "@/lib/db";
 import { json, live } from "@/lib/http";
 import { isAllowedUpstream } from "@/lib/parse-catalog";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
+import { nvidiaFetch } from "@/lib/nvidia-http";
 
 export async function POST(request: Request): Promise<Response> {
   await live();
@@ -63,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let upstream: Response;
   try {
-    upstream = await fetch(endpointUrl, {
+    upstream = await nvidiaFetch(endpointUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,
@@ -85,11 +86,7 @@ export async function POST(request: Request): Promise<Response> {
         ms: Date.now() - started,
       }),
     );
-    const name = error instanceof Error ? error.name : "Error";
-    if (name === "TimeoutError" || name === "AbortError") {
-      return json({ code: "network", message: "网络超时。输入还在，可以手动重试。" }, 504);
-    }
-    return json({ code: "network", message: "网络失败。输入还在，可以手动重试。" }, 502);
+    return json({ code: "network", message: `${classifyNetworkError(error)} 输入还在，可以手动重试。` }, 502);
   }
 
   if (!upstream.ok) {

@@ -1,4 +1,5 @@
 import { categoryFromLabels, extractEndpoint } from "@/lib/parse-catalog";
+import { nvidiaFetch } from "@/lib/nvidia-http";
 import type { DiscoveredModel } from "@/lib/types";
 
 const CATALOG_URL = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT";
@@ -122,7 +123,7 @@ async function mapPool<T>(
 }
 
 export async function discoverFreeModels(options: DiscoverOptions = {}): Promise<DiscoveredModel[]> {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? nvidiaFetch;
   const now = options.now ?? (() => new Date().toISOString());
   const confirmedAt = now();
   options.onProgress?.("正在读取 NVIDIA 模型目录");

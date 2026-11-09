@@ -1,9 +1,10 @@
 import { readApiKey } from "@/lib/chat";
-import { classifyUpstream } from "@/lib/errors";
+import { classifyNetworkError, classifyUpstream } from "@/lib/errors";
 import { getDb, getModel, listModels } from "@/lib/db";
 import { json, live } from "@/lib/http";
 import { isAllowedUpstream } from "@/lib/parse-catalog";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
+import { nvidiaFetch } from "@/lib/nvidia-http";
 
 export async function POST(request: Request): Promise<Response> {
   await live();
@@ -28,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   let upstream: Response;
   try {
-    upstream = await fetch(model.endpoint.url, {
+    upstream = await nvidiaFetch(model.endpoint.url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,
@@ -40,10 +41,10 @@ export async function POST(request: Request): Promise<Response> {
         max_tokens: 8,
         stream: false,
       }),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(90_000),
     });
-  } catch {
-    return json({ code: "network", message: "网络失败或超时。这只能说明当时连不上，不能说明 Key 无效。" }, 502);
+  } catch (error) {
+    return json({ code: "network", modelId: model.id, message: `${classifyNetworkError(error)} 这不能说明 Key 无效。` }, 502);
   }
   if (!upstream.ok) {
     await upstream.text().catch(() => "");

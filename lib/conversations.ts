@@ -22,7 +22,7 @@ export function listConversations(database: DatabaseSync, owner: string): Stored
   const rows = database
     .prepare(
       `SELECT id, title, model_id, created_at, updated_at
-       FROM conversations WHERE owner_token = ? ORDER BY updated_at DESC LIMIT 50`,
+       FROM conversations WHERE owner_token = ? ORDER BY updated_at DESC`,
     )
     .all(owner) as {
     id: string;
@@ -63,7 +63,7 @@ export function getConversation(
   const messages = database
     .prepare(
       `SELECT id, role, content, created_at FROM messages
-       WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 200`,
+       WHERE conversation_id = ? ORDER BY created_at ASC`,
     )
     .all(id) as { id: string; role: StoredMessage["role"]; content: string; created_at: string }[];
   return {
@@ -98,10 +98,8 @@ export function saveConversation(
       (message) =>
         ROLES.has(message.role) &&
         typeof message.content === "string" &&
-        message.content.length > 0 &&
-        message.content.length <= 16_000,
-    )
-    .slice(-80);
+        message.content.length > 0,
+    );
   database.exec("BEGIN");
   try {
     const existing = database
@@ -117,20 +115,6 @@ export function saveConversation(
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(input.id, owner, title, input.modelId, now, now);
-      const count = database
-        .prepare("SELECT COUNT(*) AS count FROM conversations WHERE owner_token = ?")
-        .get(owner) as { count: number };
-      if (count.count > 50) {
-        const stale = database
-          .prepare(
-            `SELECT id FROM conversations WHERE owner_token = ? ORDER BY updated_at ASC LIMIT ?`,
-          )
-          .all(owner, count.count - 50) as { id: string }[];
-        for (const row of stale) {
-          database.prepare("DELETE FROM messages WHERE conversation_id = ?").run(row.id);
-          database.prepare("DELETE FROM conversations WHERE id = ? AND owner_token = ?").run(row.id, owner);
-        }
-      }
     } else {
       database
         .prepare("UPDATE conversations SET title = ?, model_id = ?, updated_at = ? WHERE id = ? AND owner_token = ?")

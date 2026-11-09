@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { EndpointPanel } from "@/components/endpoint-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { categoryLabel, formatShanghai, statusLabel } from "@/lib/labels";
+import { useModelBenchmark, speedFor, speedLabel, sortBySpeed } from "@/lib/model-benchmark";
 import { CATEGORIES, MODEL_STATUSES, type Category, type ModelStatus, type ModelView } from "@/lib/types";
 
 type ChatMessage = {
@@ -95,6 +97,8 @@ export function Console() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   const selected = models.find((model) => model.id === selectedId) ?? null;
+  const benchmark = useModelBenchmark(apiKey);
+  const sortedModels = useMemo(() => sortBySpeed(models, benchmark.results), [models, benchmark.results]);
 
   const loadModels = useCallback(async () => {
     setLoading(true);
@@ -442,6 +446,7 @@ export function Console() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Link href="/chat" className="rounded-md border border-[#bdcbd7] bg-white px-3 py-2 text-sm hover:bg-[#edf3f7]">多模型聊天</Link>
           <Button type="button" variant="outline" onClick={startSync} disabled={syncState?.state === "running"}>
             {syncState?.state === "running" ? "同步中" : "同步目录"}
           </Button>
@@ -459,6 +464,13 @@ export function Console() {
             <p className="mt-2 border-t border-[#c46a3a] pt-2 text-sm text-[#b7c6d6]">
               {counts.total} 个模型，{counts.ready} 个可以聊天
             </p>
+            <div className="mt-3 flex items-center gap-2">
+              <button type="button" onClick={() => benchmark.running ? benchmark.stop() : void benchmark.start()} className="rounded-md border border-white/30 px-3 py-1.5 text-sm hover:bg-white/10">
+                {benchmark.running ? "停止测速" : "测速全部聊天模型"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#b7c6d6]">使用当前 Key 逐一发送短请求，测量首段可见回答时间；每个模型最多等待 30 秒。</p>
+            {benchmark.progress ? <p role="status" className="mt-1 text-xs leading-5 text-[#dbe7f1]">{benchmark.progress}</p> : null}
           </div>
           <div className="flex gap-2 px-4 pt-3">
             <button
@@ -548,8 +560,9 @@ export function Console() {
                   </div>
                 ) : (
                   <ul>
-                    {models.map((model) => {
+                    {sortedModels.map((model) => {
                       const active = model.id === selectedId;
+                      const speed = speedFor(model, benchmark.results);
                       return (
                         <li key={model.id}>
                           <button
@@ -565,6 +578,7 @@ export function Console() {
                               <span className="mt-0.5 block truncate text-xs text-[#9aafc2]">
                                 {model.publisher} · {categoryLabel(model.category)} · {statusLabel(model.status)}
                               </span>
+                              <span className="mt-0.5 block text-xs text-[#b9d8ef]" title={speed ? `测速时间 ${formatShanghai(speed.at)}` : undefined}>{speedLabel(model, benchmark.results)}</span>
                             </span>
                           </button>
                         </li>

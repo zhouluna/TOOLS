@@ -133,6 +133,9 @@ export function SettingsDialog({
           <p className="text-xs leading-5 text-muted-foreground">
             默认只留在本次标签页。勾选后保存在这台浏览器的本地存储，仍然不会上传到目录数据库。
           </p>
+          <p className="text-xs leading-5 text-muted-foreground">
+            测试会向当前选中的聊天模型发送短请求，繁忙时最多等待 90 秒；如果未选择聊天模型，将使用目录中的第一个可聊天模型。
+          </p>
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>保存聊天记录</span>
             <Switch checked={saveHistory} onCheckedChange={onSaveHistory} />

@@ -15,6 +15,28 @@ export type ApiErrorBody = {
   retryAfterSeconds?: number;
 };
 
+// Only return known diagnostic categories: never expose raw errors, URLs or headers.
+export function classifyNetworkError(error: unknown): string {
+  const codes = new Set<string>();
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+    const item = current as { name?: unknown; code?: unknown; cause?: unknown };
+    if (typeof item.name === "string") codes.add(item.name);
+    if (typeof item.code === "string") codes.add(item.code);
+    current = item.cause;
+  }
+  if (codes.has("UND_ERR_CONNECT_TIMEOUT")) return "连接 NVIDIA 超时，请检查网络或代理设置。";
+  if (codes.has("TimeoutError")) return "等待 NVIDIA 响应超时，可能是模型繁忙；可以换一个模型后重试。";
+  if (codes.has("ENOTFOUND") || codes.has("EAI_AGAIN")) return "无法解析 NVIDIA 域名，请检查 DNS 和网络。";
+  if ([...codes].some((code) => /^(CERT_|ERR_TLS_|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE)/.test(code))) {
+    return "与 NVIDIA 建立安全连接失败，请检查系统时间、证书或代理设置。";
+  }
+  if (codes.has("ECONNREFUSED") || codes.has("ECONNRESET") || codes.has("ENETUNREACH")) {
+    return "连接 NVIDIA 失败或中断，请检查网络或代理设置。";
+  }
+  return "连接 NVIDIA 失败，请检查网络或代理设置后重试。";
+}
+
 export function classifyUpstream(status: number, retryAfterHeader: string | null): ApiErrorBody {
   const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : undefined;
   const retry =

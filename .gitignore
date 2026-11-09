@@ -41,9 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 # local catalog database
-*.db
-*.db-*
-*.db-journal
 /data/*.db
 /data/*.db-*
 /data/*.db-journal
