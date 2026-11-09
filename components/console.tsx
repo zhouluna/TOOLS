@@ -86,6 +86,7 @@ export function Console() {
   const [owner, setOwner] = useState("");
   const [syncIntervalHours, setSyncIntervalHours] = useState(24);
   const [syncState, setSyncState] = useState<SyncState | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [conversationId, setConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -179,14 +180,27 @@ export function Console() {
   }, [refreshSync]);
 
   useEffect(() => {
+    // Local awaited sync drives the button; only poll for background (non-hosted) runs.
+    if (syncing) return;
     if (syncState?.state !== "running") return;
+    let ticks = 0;
     const timer = window.setInterval(() => {
+      ticks += 1;
       void refreshSync().then((data) => {
-        if (data && data.state === "idle") void loadModels();
+        if (data && data.state === "idle") {
+          void loadModels();
+          return;
+        }
+        // Warm-instance stale "running" without local work — re-enable the button.
+        if (ticks >= 15) {
+          setSyncState((previous) =>
+            previous ? { ...previous, state: "idle", progress: "", message: previous.message } : previous,
+          );
+        }
       });
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [loadModels, refreshSync, syncState?.state]);
+  }, [loadModels, refreshSync, syncState?.state, syncing]);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
@@ -242,33 +256,54 @@ export function Console() {
   }
 
   async function startSync() {
-    const response = await fetch("/api/sync", {
-      method: "POST",
-      signal: AbortSignal.timeout(58_000),
-    });
-    const data = (await response.json().catch(() => null)) as
-      | (SyncState & { started?: boolean; ok?: boolean; awaited?: boolean })
-      | null;
-    if (!response.ok || !data) {
-      setSyncState((previous) =>
-        previous
-          ? {
-              ...previous,
-              state: "idle",
-              progress: "",
-              message:
-                response.status === 429
-                  ? "同步太频繁。请等几分钟再试。"
-                  : response.status === 504
-                    ? "同步超时。线上只会拉取目录列表，可再试一次。"
-                    : "同步没有完成，可再试一次。",
-            }
-          : previous,
-      );
-      return;
+    if (syncing) return;
+    setSyncing(true);
+    setSyncState((previous) => ({
+      state: "running",
+      progress: "正在刷新免费模型",
+      lastSuccessAt: previous?.lastSuccessAt ?? null,
+      message: previous?.message,
+      lastRun: previous?.lastRun ?? null,
+    }));
+    try {
+      const response = await fetch("/api/sync", {
+        method: "POST",
+        signal: AbortSignal.timeout(290_000),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | (SyncState & { started?: boolean; ok?: boolean; awaited?: boolean })
+        | null;
+      if (!response.ok || !data) {
+        setSyncState((previous) => ({
+          state: "idle",
+          progress: "",
+          lastSuccessAt: previous?.lastSuccessAt ?? null,
+          lastRun: previous?.lastRun ?? null,
+          message:
+            response.status === 429
+              ? "同步太频繁。请等几分钟再试。"
+              : response.status === 504
+                ? "同步超时。可再试一次；未完成的接口仍保留上次结果。"
+                : "同步没有完成，可再试一次。",
+        }));
+        return;
+      }
+      setSyncState({ ...data, state: data.state === "running" && data.awaited ? "idle" : data.state });
+      void loadModels();
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+      setSyncState((previous) => ({
+        state: "idle",
+        progress: "",
+        lastSuccessAt: previous?.lastSuccessAt ?? null,
+        lastRun: previous?.lastRun ?? null,
+        message: timedOut
+          ? "同步等待超时。可刷新后再试；目录可能已部分更新。"
+          : "网络失败，同步没有完成，可再试一次。",
+      }));
+    } finally {
+      setSyncing(false);
     }
-    setSyncState(data);
-    if (data.state === "idle") void loadModels();
   }
 
   async function saveInterval(hours: number) {
@@ -465,15 +500,15 @@ export function Console() {
         <div className="min-w-0">
           <p className="text-lg leading-none font-medium tracking-tight">端点台</p>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {syncState?.state === "running"
-              ? syncState.progress || "正在同步"
+            {syncing || syncState?.state === "running"
+              ? syncState?.progress || "正在同步"
               : `上次成功 ${formatShanghai(syncState?.lastSuccessAt)}`}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Link href="/chat" className="rounded-md border border-[#bdcbd7] bg-white px-3 py-2 text-sm hover:bg-[#edf3f7]">多模型聊天</Link>
-          <Button type="button" variant="outline" onClick={startSync} disabled={syncState?.state === "running"}>
-            {syncState?.state === "running" ? "同步中" : "同步目录"}
+          <Button type="button" variant="outline" onClick={startSync} disabled={syncing}>
+            {syncing ? "同步中" : "同步目录"}
           </Button>
           <Button type="button" onClick={() => setSettingsOpen(true)}>
             设置
@@ -579,8 +614,8 @@ export function Console() {
                 ) : models.length === 0 ? (
                   <div className="px-3 py-6 text-sm leading-6 text-[#c5d3e0]">
                     目录还是空的。同步一次，从 NVIDIA 拉取标记为 Free Endpoint 的模型。
-                    <Button className="mt-3" type="button" onClick={startSync}>
-                      同步目录
+                    <Button className="mt-3" type="button" onClick={startSync} disabled={syncing}>
+                      {syncing ? "同步中" : "同步目录"}
                     </Button>
                   </div>
                 ) : (

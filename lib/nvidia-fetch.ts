@@ -25,6 +25,10 @@ export type DiscoverOptions = {
   onProgress?: (message: string) => void;
   fetchImpl?: typeof fetch;
   now?: () => string;
+  /** Stop starting new page scrapes after this many ms from discover start. */
+  deadlineMs?: number;
+  pageTimeoutMs?: number;
+  concurrency?: number;
 };
 
 function labelValues(resource: CatalogResource): string[] {
@@ -158,6 +162,10 @@ export async function discoverFreeModels(options: DiscoverOptions = {}): Promise
   const fetchImpl = options.fetchImpl ?? nvidiaFetch;
   const now = options.now ?? (() => new Date().toISOString());
   const confirmedAt = now();
+  const started = Date.now();
+  const deadlineMs = options.deadlineMs;
+  const pageTimeoutMs = options.pageTimeoutMs ?? 25_000;
+  const concurrency = options.concurrency ?? 3;
   options.onProgress?.("正在读取 NVIDIA 模型目录");
   const resources = await fetchCatalogResources(fetchImpl);
   const free = resources.filter((resource) => {
@@ -168,23 +176,39 @@ export async function discoverFreeModels(options: DiscoverOptions = {}): Promise
   options.onProgress?.(`目录里有 ${free.length} 个免费端点，正在核对接口`);
 
   const discovered: DiscoveredModel[] = new Array(free.length);
-  await mapPool(free, 3, async (resource, index) => {
+  let scraped = 0;
+  let skipped = 0;
+
+  function pastDeadline(): boolean {
+    return typeof deadlineMs === "number" && Date.now() - started >= deadlineMs;
+  }
+
+  await mapPool(free, concurrency, async (resource, index) => {
     const name = resource.name?.trim() ?? "";
     const publisher = publisherOf(resource) ?? "";
     const labels = labelValues(resource);
     const pageUrl = `https://build.nvidia.com/${publisher}/${name}`;
     let endpoint = null;
-    try {
-      const response = await fetchImpl(pageUrl, {
-        headers: { accept: "text/html", "user-agent": USER_AGENT },
-        signal: AbortSignal.timeout(25_000),
-      });
-      if (response.ok) {
-        const html = await readLimited(response, PAGE_BYTE_LIMIT);
-        endpoint = extractEndpoint(html, publisher, name, confirmedAt);
+    if (pastDeadline()) {
+      skipped += 1;
+    } else {
+      try {
+        const response = await fetchImpl(pageUrl, {
+          headers: { accept: "text/html", "user-agent": USER_AGENT },
+          signal: AbortSignal.timeout(pageTimeoutMs),
+        });
+        if (response.ok) {
+          const html = await readLimited(response, PAGE_BYTE_LIMIT);
+          endpoint = extractEndpoint(html, publisher, name, confirmedAt);
+        }
+      } catch {
+        endpoint = null;
       }
-    } catch {
-      endpoint = null;
+      scraped += 1;
+      if (scraped % 8 === 0 || scraped === free.length) {
+        options.onProgress?.(`已核对 ${scraped}/${free.length}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
     }
     discovered[index] = {
       id: `${publisher}/${name}`,
@@ -199,11 +223,11 @@ export async function discoverFreeModels(options: DiscoverOptions = {}): Promise
       freeSource: "NVIDIA 目录标签 Free Endpoint",
       endpoint,
     };
-    if (index % 8 === 0) {
-      options.onProgress?.(`已核对 ${index + 1}/${free.length}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 120));
   });
+
+  if (skipped > 0) {
+    options.onProgress?.(`已核对 ${scraped}/${free.length}，剩余 ${skipped} 个保留已有接口`);
+  }
 
   const unique = new Map<string, DiscoveredModel>();
   for (const model of discovered) {
