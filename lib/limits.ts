@@ -13,6 +13,10 @@ export const KEY_TEST_CLIENT_ABORT_MS = 58_000;
 
 export const CHAT_MAX_DURATION_SECONDS = 300;
 
+/** Hosted catalog-list sync (no per-model page scrape). */
+export const SYNC_MAX_DURATION_SECONDS = 60;
+export const SYNC_CLIENT_ABORT_MS = 58_000;
+
 export function finishesBeforeDeadline(abortMs: number, maxDurationSeconds: number, marginMs = 5_000): boolean {
   return abortMs + marginMs <= maxDurationSeconds * 1000 && maxDurationSeconds <= HOBBY_MAX_DURATION_SECONDS;
 }

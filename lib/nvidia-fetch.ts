@@ -122,6 +122,38 @@ async function mapPool<T>(
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
 }
 
+export async function discoverCatalogModels(options: DiscoverOptions = {}): Promise<DiscoveredModel[]> {
+  const fetchImpl = options.fetchImpl ?? nvidiaFetch;
+  options.onProgress?.("正在读取 NVIDIA 模型目录");
+  const resources = await fetchCatalogResources(fetchImpl);
+  const discovered: DiscoveredModel[] = [];
+  for (const resource of resources) {
+    const name = resource.name?.trim();
+    const publisher = publisherOf(resource);
+    if (!name || !publisher) continue;
+    const labels = labelValues(resource);
+    if (!isFree(labels)) continue;
+    discovered.push({
+      id: `${publisher}/${name}`,
+      name,
+      displayName: resource.displayName?.trim() || name,
+      publisher,
+      summary: resource.description?.trim() || "目录没有提供简介。",
+      category: categoryFromLabels(labels),
+      labels,
+      pageUrl: `https://build.nvidia.com/${publisher}/${name}`,
+      logoUrl: logoOf(resource),
+      freeSource: "NVIDIA 目录标签 Free Endpoint",
+      // Hosted sync skips per-model HTML scrapes; applyDiscovered reuses stored endpoints.
+      endpoint: null,
+    });
+  }
+  options.onProgress?.(`目录列表 ${discovered.length} 个免费端点（未抓取模型页）`);
+  const unique = new Map<string, DiscoveredModel>();
+  for (const model of discovered) unique.set(model.id, model);
+  return [...unique.values()];
+}
+
 export async function discoverFreeModels(options: DiscoverOptions = {}): Promise<DiscoveredModel[]> {
   const fetchImpl = options.fetchImpl ?? nvidiaFetch;
   const now = options.now ?? (() => new Date().toISOString());

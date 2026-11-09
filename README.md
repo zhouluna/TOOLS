@@ -35,7 +35,7 @@ npm run dev
 
 同步默认每 24 小时一次，只在应用运行时执行。失败会保留上一次成功的目录。模型第一次从完整同步里消失时标为疑似下线，下一次完整同步仍没有时标为已下线，历史不删除。
 
-部署到 Vercel 后不再抓取完整 NGC 目录：一次函数调用塞不下多页目录和每个模型页的请求，超时还会和设置、Key 测试抢同一实例。线上列表来自仓库里的 `data/catalog-snapshot.json`。要更新线上目录，在本机执行 `npm run snapshot` 后重新部署。Key 测试仍使用请求头里的 Key，不读取服务器上的 `NVIDIA_API_KEY`。
+部署到 Vercel 后，「同步目录」改为**目录列表同步**：只请求 NGC 公开搜索（通常几秒内完成），用列表增删改元数据，并保留实例里已有的接口地址；**不会**再逐个抓取 build.nvidia.com 模型页。完整接口核对仍需在本机执行 `npm run snapshot` 后重新部署（写入 `data/catalog-snapshot.json`）。线上 SQLite 在 `/tmp`，冷启动会重新从快照播种。Key 测试仍使用请求头里的 Key，不读取服务器上的 `NVIDIA_API_KEY`。
 
 ## 目录从哪来
 
