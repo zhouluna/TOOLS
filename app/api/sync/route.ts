@@ -3,7 +3,7 @@ import { awaitHostedCatalogSync, syncStatus, triggerSync, usesHostedSnapshot } f
 import { json, live } from "@/lib/http";
 
 // Keep literal equal to SYNC_MAX_DURATION_SECONDS in lib/limits.ts.
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: Request): Promise<Response> {
   await live();

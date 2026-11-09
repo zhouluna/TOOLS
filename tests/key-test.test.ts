@@ -82,23 +82,28 @@ test("unspecified key test prefers the small bolt model over the first alphabeti
   assert.equal(pickProbeModel([candidate("nvidia/embed", null, "pending_adapt")]), null);
 });
 
-test("hosted sync uses catalog list mode instead of background full scrape", () => {
+test("hosted sync awaits in-request free-model refresh instead of background scrape", () => {
   const previous = process.env.VERCEL;
   process.env.VERCEL = "1";
   try {
     assert.equal(usesHostedSnapshot(), true);
     // Background full scrape stays disabled on Vercel.
     assert.equal(triggerSync().started, false);
-    assert.match(triggerSync().message ?? "", /目录列表|snapshot|npm run snapshot/i);
+    assert.match(triggerSync().message ?? "", /免费模型|snapshot|npm run snapshot/i);
     const scheduler = fs.readFileSync(path.join(process.cwd(), "lib/sync.ts"), "utf8");
     assert.match(scheduler, /export function ensureScheduledSync[\s\S]*if \(usesHostedSnapshot\(\)\) return;/);
     assert.match(scheduler, /awaitHostedCatalogSync/);
-    assert.match(scheduler, /discoverCatalogModels/);
+    assert.match(scheduler, /mode === "hosted"/);
+    assert.match(scheduler, /activelyRunning/);
     const syncRoute = fs.readFileSync(path.join(process.cwd(), "app/api/sync/route.ts"), "utf8");
-    assert.match(syncRoute, /export const maxDuration = 60;/);
+    assert.match(syncRoute, /export const maxDuration = 300;/);
     assert.match(syncRoute, /awaitHostedCatalogSync/);
     const fetchLib = fs.readFileSync(path.join(process.cwd(), "lib/nvidia-fetch.ts"), "utf8");
+    assert.match(fetchLib, /deadlineMs/);
     assert.match(fetchLib, /export async function discoverCatalogModels/);
+    const consoleUi = fs.readFileSync(path.join(process.cwd(), "components/console.tsx"), "utf8");
+    assert.match(consoleUi, /disabled=\{syncing\}/);
+    assert.match(consoleUi, /AbortSignal\.timeout\(290_000\)/);
   } finally {
     if (previous === undefined) delete process.env.VERCEL;
     else process.env.VERCEL = previous;
