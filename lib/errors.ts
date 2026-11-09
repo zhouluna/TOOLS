@@ -15,26 +15,55 @@ export type ApiErrorBody = {
   retryAfterSeconds?: number;
 };
 
-// Only return known diagnostic categories: never expose raw errors, URLs or headers.
-export function classifyNetworkError(error: unknown): string {
+export type NetworkReason = "timeout" | "connect" | "dns" | "tls" | "reset" | "unknown";
+
+function errorCodes(error: unknown): { codes: Set<string>; message: string } {
   const codes = new Set<string>();
+  let message = "";
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
-    const item = current as { name?: unknown; code?: unknown; cause?: unknown };
+    const item = current as { name?: unknown; code?: unknown; message?: unknown; cause?: unknown };
     if (typeof item.name === "string") codes.add(item.name);
     if (typeof item.code === "string") codes.add(item.code);
+    if (!message && typeof item.message === "string") message = item.message;
     current = item.cause;
   }
-  if (codes.has("UND_ERR_CONNECT_TIMEOUT")) return "连接 NVIDIA 超时，请检查网络或代理设置。";
-  if (codes.has("TimeoutError")) return "等待 NVIDIA 响应超时，可能是模型繁忙；可以换一个模型后重试。";
-  if (codes.has("ENOTFOUND") || codes.has("EAI_AGAIN")) return "无法解析 NVIDIA 域名，请检查 DNS 和网络。";
+  return { codes, message };
+}
+
+// Only return known diagnostic categories: never expose raw errors, URLs or headers.
+export function networkReason(error: unknown): NetworkReason {
+  const { codes, message } = errorCodes(error);
+  if (codes.has("UND_ERR_CONNECT_TIMEOUT")) return "connect";
+  if (codes.has("TimeoutError") || /aborted due to timeout/i.test(message)) return "timeout";
+  if (codes.has("ENOTFOUND") || codes.has("EAI_AGAIN")) return "dns";
   if ([...codes].some((code) => /^(CERT_|ERR_TLS_|DEPTH_ZERO_SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE)/.test(code))) {
-    return "与 NVIDIA 建立安全连接失败，请检查系统时间、证书或代理设置。";
+    return "tls";
   }
-  if (codes.has("ECONNREFUSED") || codes.has("ECONNRESET") || codes.has("ENETUNREACH")) {
-    return "连接 NVIDIA 失败或中断，请检查网络或代理设置。";
+  if (codes.has("ECONNREFUSED") || codes.has("ECONNRESET") || codes.has("ENETUNREACH")) return "reset";
+  return "unknown";
+}
+
+export function classifyNetworkError(error: unknown): string {
+  const reason = networkReason(error);
+  switch (reason) {
+    case "connect":
+      return "连接 NVIDIA 超时，请检查网络或代理设置。";
+    case "timeout":
+      return "等待 NVIDIA 响应超时，可能是模型繁忙；可以换一个模型后重试。";
+    case "dns":
+      return "无法解析 NVIDIA 域名，请检查 DNS 和网络。";
+    case "tls":
+      return "与 NVIDIA 建立安全连接失败，请检查系统时间、证书或代理设置。";
+    case "reset":
+      return "连接 NVIDIA 失败或中断，请检查网络或代理设置。";
+    case "unknown":
+      return "连接 NVIDIA 失败，请检查网络或代理设置后重试。";
+    default: {
+      const unexpected: never = reason;
+      return unexpected;
+    }
   }
-  return "连接 NVIDIA 失败，请检查网络或代理设置后重试。";
 }
 
 export function classifyUpstream(status: number, retryAfterHeader: string | null): ApiErrorBody {

@@ -6,6 +6,10 @@ import { isAllowedUpstream } from "@/lib/parse-catalog";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { nvidiaFetch } from "@/lib/nvidia-http";
 
+// Hobby ceiling. Streaming keeps the invocation alive, so this stays at the
+// platform maximum instead of the short key-test budget.
+export const maxDuration = 300;
+
 export async function POST(request: Request): Promise<Response> {
   await live();
   const started = Date.now();

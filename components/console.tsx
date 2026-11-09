@@ -29,6 +29,7 @@ type SyncState = {
   state: "idle" | "running";
   progress: string;
   lastSuccessAt: string | null;
+  message?: string;
   lastRun: {
     result: string;
     added: number;
@@ -775,7 +776,11 @@ export function Console() {
           )}
         </main>
       </div>
-      {syncState?.lastRun && syncState.state === "idle" ? (
+      {syncState?.message ? (
+        <p className="border-t border-[#d5e0e8] bg-[#f7fafc] px-4 py-1.5 text-xs text-muted-foreground">
+          {syncState.message}
+        </p>
+      ) : syncState?.lastRun && syncState.state === "idle" ? (
         <p className="border-t border-[#d5e0e8] bg-[#f7fafc] px-4 py-1.5 text-xs text-muted-foreground">
           最近一次同步{syncState.lastRun.result === "success" ? "完成" : "失败"}
           ：新增 {syncState.lastRun.added}，更新 {syncState.lastRun.updated}，疑似下线 {syncState.lastRun.suspected}
