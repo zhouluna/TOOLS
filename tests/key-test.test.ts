@@ -82,15 +82,23 @@ test("unspecified key test prefers the small bolt model over the first alphabeti
   assert.equal(pickProbeModel([candidate("nvidia/embed", null, "pending_adapt")]), null);
 });
 
-test("hosted sync stays on the snapshot", () => {
+test("hosted sync uses catalog list mode instead of background full scrape", () => {
   const previous = process.env.VERCEL;
   process.env.VERCEL = "1";
   try {
     assert.equal(usesHostedSnapshot(), true);
+    // Background full scrape stays disabled on Vercel.
     assert.equal(triggerSync().started, false);
-    assert.match(triggerSync().message ?? "", /快照/);
+    assert.match(triggerSync().message ?? "", /目录列表|snapshot|npm run snapshot/i);
     const scheduler = fs.readFileSync(path.join(process.cwd(), "lib/sync.ts"), "utf8");
     assert.match(scheduler, /export function ensureScheduledSync[\s\S]*if \(usesHostedSnapshot\(\)\) return;/);
+    assert.match(scheduler, /awaitHostedCatalogSync/);
+    assert.match(scheduler, /discoverCatalogModels/);
+    const syncRoute = fs.readFileSync(path.join(process.cwd(), "app/api/sync/route.ts"), "utf8");
+    assert.match(syncRoute, /export const maxDuration = 60;/);
+    assert.match(syncRoute, /awaitHostedCatalogSync/);
+    const fetchLib = fs.readFileSync(path.join(process.cwd(), "lib/nvidia-fetch.ts"), "utf8");
+    assert.match(fetchLib, /export async function discoverCatalogModels/);
   } finally {
     if (previous === undefined) delete process.env.VERCEL;
     else process.env.VERCEL = previous;

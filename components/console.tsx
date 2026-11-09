@@ -242,9 +242,33 @@ export function Console() {
   }
 
   async function startSync() {
-    const response = await fetch("/api/sync", { method: "POST" });
-    const data = (await response.json()) as SyncState;
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      signal: AbortSignal.timeout(58_000),
+    });
+    const data = (await response.json().catch(() => null)) as
+      | (SyncState & { started?: boolean; ok?: boolean; awaited?: boolean })
+      | null;
+    if (!response.ok || !data) {
+      setSyncState((previous) =>
+        previous
+          ? {
+              ...previous,
+              state: "idle",
+              progress: "",
+              message:
+                response.status === 429
+                  ? "同步太频繁。请等几分钟再试。"
+                  : response.status === 504
+                    ? "同步超时。线上只会拉取目录列表，可再试一次。"
+                    : "同步没有完成，可再试一次。",
+            }
+          : previous,
+      );
+      return;
+    }
     setSyncState(data);
+    if (data.state === "idle") void loadModels();
   }
 
   async function saveInterval(hours: number) {
@@ -776,16 +800,17 @@ export function Console() {
           )}
         </main>
       </div>
-      {syncState?.message ? (
+      {syncState?.message || (syncState?.lastRun && syncState.state === "idle") ? (
         <p className="border-t border-[#d5e0e8] bg-[#f7fafc] px-4 py-1.5 text-xs text-muted-foreground">
-          {syncState.message}
-        </p>
-      ) : syncState?.lastRun && syncState.state === "idle" ? (
-        <p className="border-t border-[#d5e0e8] bg-[#f7fafc] px-4 py-1.5 text-xs text-muted-foreground">
-          最近一次同步{syncState.lastRun.result === "success" ? "完成" : "失败"}
-          ：新增 {syncState.lastRun.added}，更新 {syncState.lastRun.updated}，疑似下线 {syncState.lastRun.suspected}
-          ，确认下线 {syncState.lastRun.offlined}
-          {syncState.lastRun.error ? `。${syncState.lastRun.error}` : ""}
+          {syncState.message ? <span>{syncState.message} </span> : null}
+          {syncState.lastRun && syncState.state === "idle" ? (
+            <span>
+              最近一次同步{syncState.lastRun.result === "success" ? "完成" : "失败"}
+              ：新增 {syncState.lastRun.added}，更新 {syncState.lastRun.updated}，疑似下线{" "}
+              {syncState.lastRun.suspected}，确认下线 {syncState.lastRun.offlined}
+              {syncState.lastRun.error ? `。${syncState.lastRun.error}` : ""}
+            </span>
+          ) : null}
         </p>
       ) : null}
       <SettingsDialog
