@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import type { ModelView } from "@/lib/types";
 import type { MultiConversation, MultiMessage } from "@/lib/multi-conversations";
 import { useModelBenchmark, speedLabel, sortBySpeed } from "@/lib/model-benchmark";
@@ -193,7 +194,14 @@ export function MultiChat() {
           <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6" aria-live="polite">
             {!messages.length ? <p className="mx-auto mt-16 max-w-xl text-center text-slate-500">开始一段对话。你可以随时切换模型，继续讨论同一个问题。</p> : null}
             {messages.map((m) => <div key={m.id} className={`mx-auto max-w-3xl rounded-lg p-4 ${m.role === "user" ? "bg-[#d7e6f8]" : "border border-slate-200 bg-white"}`}>
-              <p className="mb-2 text-xs font-medium text-slate-500">{m.role === "user" ? "我" : m.modelName || m.modelId || "模型来源未知"}</p><div className="whitespace-pre-wrap break-words text-sm leading-7">{m.content || (sending && m.role === "assistant" ? "正在等待回答…" : "")}</div>
+              <p className="mb-2 text-xs font-medium text-slate-500">{m.role === "user" ? "我" : m.modelName || m.modelId || "模型来源未知"}</p>
+              <div className="break-words text-sm leading-7">
+                {m.content ? (
+                  <ChatMarkdown content={m.content} tone={m.role === "user" ? "user" : "assistant"} />
+                ) : sending && m.role === "assistant" ? (
+                  "正在等待回答…"
+                ) : null}
+              </div>
             </div>)}
           </div>
           <div className="border-t border-slate-200 bg-[#f7fafc] p-4">

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { ChatMarkdown } from "@/components/chat-markdown";
 import { EndpointPanel } from "@/components/endpoint-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -749,7 +750,7 @@ export function Console() {
                         {messages.map((message) =>
                           message.role === "user" ? (
                             <div key={message.id} className="ml-auto max-w-[85%] rounded-md bg-[#1c2838] px-3 py-2 text-sm leading-6 text-white">
-                              {message.content}
+                              <ChatMarkdown content={message.content} tone="user" surface="dark" />
                             </div>
                           ) : (
                             <div key={message.id} className="border-l-2 border-[#1f4fd8] pl-3">
@@ -758,9 +759,11 @@ export function Console() {
                                   {message.reasoning}
                                 </p>
                               ) : null}
-                              <p className="text-sm leading-6 whitespace-pre-wrap">
-                                {message.content || (sending ? "正在写…" : "")}
-                              </p>
+                              {message.content ? (
+                                <ChatMarkdown content={message.content} tone="assistant" className="text-sm leading-6" />
+                              ) : sending ? (
+                                <p className="text-sm leading-6">正在写…</p>
+                              ) : null}
                             </div>
                           ),
                         )}
